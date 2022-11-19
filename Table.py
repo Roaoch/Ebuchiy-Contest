@@ -16,6 +16,9 @@ class SortParameterError(BaseException):
 class SortWayError(BaseException):
     pass
 
+class OutOfDataError(BaseException):
+    pass
+
 
 class HeadKey(enum.Enum):
     name = "Название"
@@ -131,25 +134,25 @@ try:
         }
         filter_checker = {
             HeadKey.key_skills: lambda vacancy, filter_key:
-            all(x in vacancy[HeadKey.key_skills] for x in filter_key),
+                all(x in vacancy[HeadKey.key_skills] for x in filter_key),
             HeadKey.salary: lambda vacancy, filter_key:
-            int(vacancy[HeadKey.salary_from][0]) <= filter_key <= int(vacancy[HeadKey.salary_to][0]),
+                int(vacancy[HeadKey.salary_from][0]) <= filter_key <= int(vacancy[HeadKey.salary_to][0]),
             HeadKey.published_at: lambda vacancy, filter_key:
-            are_equal(vacancy[HeadKey.published_at][0], filter_key),
+                are_equal(vacancy[HeadKey.published_at][0], filter_key),
             HeadKey.experience_id: lambda vacancy, filter_key:
-            vacancy[HeadKey.experience_id][0] == filter_key,
+                vacancy[HeadKey.experience_id][0] == filter_key,
             HeadKey.premium: lambda vacancy, filter_key:
-            vacancy[HeadKey.premium][0] == filter_key,
+                vacancy[HeadKey.premium][0] == filter_key,
             HeadKey.salary_currency: lambda vacancy, filter_key:
-            vacancy[HeadKey.salary_currency][0] == filter_key,
+                vacancy[HeadKey.salary_currency][0] == filter_key,
             HeadKey.name: lambda vacancy, filter_key:
-            vacancy[HeadKey.name][0] == filter_key,
+                vacancy[HeadKey.name][0] == filter_key,
             HeadKey.area_name: lambda vacancy, filter_key:
-            vacancy[HeadKey.area_name][0] == filter_key,
+                vacancy[HeadKey.area_name][0] == filter_key,
             HeadKey.employer_name: lambda vacancy, filter_key:
-            vacancy[HeadKey.employer_name][0] == filter_key,
+                vacancy[HeadKey.employer_name][0] == filter_key,
             HeadKey.description: lambda vacancy, filter_key:
-            vacancy[HeadKey.description][0] == filter_key
+                vacancy[HeadKey.description][0] == filter_key
         }
         formatter_row = {
             lambda row: row.__setitem__(HeadKey.description,
@@ -341,7 +344,7 @@ try:
             if len(element) != properties_count - 1:
                 return False
             for i in range(len(element)):
-                if element[i].replace(' ', '') == '':
+                if element[i] == '':
                     return False
             return True
 
@@ -365,7 +368,7 @@ try:
         def csv_parse(self, file_name):
             data = self.__reader(file_name)
             if len(data) == 0:
-                raise Exception
+                raise OutOfDataError
             return self.__csv_filer(data, list(HeadKey.__members__))
 
 
@@ -384,5 +387,5 @@ except SortParameterError:
     print("Параметр сортировки некорректен")
 except SortWayError:
     print("Порядок сортировки задан некорректно")
-# except Exception:
-#     print("Нет данных")
+except OutOfDataError:
+    print("Нет данных")
