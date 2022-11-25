@@ -2,16 +2,7 @@ import csv
 import codecs
 import re
 from datetime import datetime
-from prettytable import PrettyTable
-from typing import List, Generator, Callable
-
-
-class SortParameterError(BaseException):
-    pass
-
-
-class SortWayError(BaseException):
-    pass
+from typing import List, Generator, Dict
 
 
 class OutOfDataError(BaseException):
@@ -19,50 +10,6 @@ class OutOfDataError(BaseException):
 
 
 class Translator:
-    translation_currency = {
-        "AZN": "Манаты",
-        "BYR": "Белорусские рубли",
-        "EUR": "Евро",
-        "GEL": "Грузинский лари",
-        "KGS": "Киргизский сом",
-        "KZT": "Тенге",
-        "RUR": "Рубли",
-        "UAH": "Гривны",
-        "USD": "Доллары",
-        "UZS": "Узбекский сум",
-    }
-    translation_gross = {
-        "False": "С вычетом налогов",
-        "True": "Без вычета налогов"
-    }
-    translation_filter = {
-        "Навыки": "key_skills",
-        "Оклад": "salary",
-        "Дата публикации вакансии": "published_at",
-        "Опыт работы": "experience_id",
-        "Премиум-вакансия": "premium",
-        "Идентификатор валюты оклада": "salary_currency",
-        "Название": "name",
-        "Название региона": "area_name",
-        "Компания": "employer_name",
-        "Описание": "description"
-    }
-    translation_experience = {
-        "noExperience": "Нет опыта",
-        "between1And3": "От 1 года до 3 лет",
-        "between3And6": "От 3 до 6 лет",
-        "moreThan6": "Более 6 лет"
-    }
-    experience_to_int = {
-        "noExperience": 1,
-        "between1And3": 2,
-        "between3And6": 3,
-        "moreThan6": 4
-    }
-    translation_premium = {
-        "False": "Нет",
-        "True": "Да"
-    }
     currency_to_rub = {
         "AZN": 35.68,
         "BYR": 23.91,
@@ -76,104 +23,58 @@ class Translator:
         "UZS": 0.0055,
     }
 
-    @staticmethod
-    def inverse_dict(straight: dict) -> dict:
-        return {v: k for k, v in straight.items()}
-
 
 class Salary:
     def __init__(self, salary_property: List[str]):
-        self.salary_from = salary_property[1]
-        self.salary_to = salary_property[2]
-        self.salary_gross = salary_property[3]
-        self.salary_currency = salary_property[4]
+        self.salary_from = float(salary_property[0])
+        self.salary_to = float(salary_property[1])
+        if len(salary_property) == 4:
+            self.salary_gross = salary_property[2]
+            self.salary_currency = salary_property[3]
+        else:
+            self.salary_currency = salary_property[2]
 
-    def __str__(self):
-        return "{0} - {1} ({2}) ({3})".format(
-            self.__format_float(self.salary_from),
-            self.__format_float(self.salary_to),
-            Translator.translation_currency[self.salary_currency],
-            Translator.translation_gross[self.salary_gross]
-        )
-
-    @staticmethod
-    def __format_float(salary: str) -> str:
-        return "{:,.0f}".format(float(salary)).replace(',', ' ')
+    def get_salary(self) -> float:
+        return (self.salary_from + self.salary_to) / 2 * Translator.currency_to_rub[self.salary_currency]
 
 
 class Vacancy:
-    __formatter = {
-        lambda row: row.__setattr__("description", row.description.strip()),
-        lambda row: row.__setattr__("key_skills", "\n".join(row.key_skills)),
-        lambda row: row.__setattr__("premium", Translator.translation_premium[row.premium.capitalize()]),
-        lambda row: row.__setattr__("experience_id", Translator.translation_experience[row.experience_id]),
-        lambda row: row.__setattr__("published_at", datetime.strftime(row.published_at, "%d.%m.%Y"))
-    }
-
-    def __init__(self, property_list: List[any]):
-        self.name = property_list[0]
-        self.description = property_list[1]
-        self.key_skills = property_list[2] if type(property_list[2]) == list else [property_list[2]]
-        self.experience_id = property_list[3]
-        self.premium = property_list[4]
-        self.employer_name = property_list[5]
-        self.salary = Salary(property_list[5:10])
-        self.area_name = property_list[10]
-        self.published_at = datetime.strptime(property_list[11], "%Y-%m-%dT%H:%M:%S%z")
-
-    def make_table_row(self) -> List[any]:
-        result = []
-        for formatting in self.__formatter:
-            formatting(self)
-
-        for attribute in self.__dict__:
-            attribute_value = self.__getattribute__(attribute)
-            if len(attribute_value.__str__()) > 100:
-                attribute_value = attribute_value.__str__()[:100] + "..."
-            result.append(attribute_value)
-        return result
+    def __init__(self, property_list: List[any], headline: List[str]):
+        if len(headline) == 12:
+            self.name = property_list[0]
+            self.description = property_list[1]
+            self.key_skills = property_list[2] if type(property_list[2]) == list else [property_list[2]]
+            self.experience_id = property_list[3]
+            self.premium = property_list[4]
+            self.employer_name = property_list[5]
+            self.salary = Salary(property_list[6:10])
+            self.area_name = property_list[10]
+            self.published_at = datetime.strptime(property_list[11], "%Y-%m-%dT%H:%M:%S%z")
+        elif len(headline) == 6:
+            self.name = property_list[0]
+            self.salary = Salary(property_list[1:4])
+            self.area_name = property_list[4]
+            self.published_at = datetime.strptime(property_list[5], "%Y-%m-%dT%H:%M:%S%z")
 
 
 class DataSet:
     __CLEANER = re.compile('<.*?>')
     __SPACE_CLEANER = re.compile('(\s\s+)|(\xa0)')
-    __sorter = {
-        "Навыки": lambda to_sort:
-        len(to_sort.key_skills),
-        "Оклад": lambda to_sort:
-        (float(to_sort.salary.salary_from) + float(to_sort.salary.salary_to))
-        / 2 * Translator.currency_to_rub[to_sort.salary.salary_currency],
-        "Опыт работы": lambda to_sort:
-        Translator.experience_to_int[to_sort.experience_id],
-        "Название": lambda to_sort:
-        to_sort.name,
-        "Описание": lambda to_sort:
-        to_sort.description,
-        "Премиум-вакансия": lambda to_sort:
-        to_sort.premium,
-        "Компания": lambda to_sort:
-        to_sort.employer_name,
-        "Название региона": lambda to_sort:
-        to_sort.area_name,
-        "Дата публикации вакансии": lambda to_sort:
-        to_sort.published_at
-    }
 
     def __init__(self, file_name: str):
         self.file_name = file_name
+        self.headline = []
         self.vacancies_reader = self.__clean_properties(
             vacancies=self.__reader(file_name=file_name)
         )
 
-    @staticmethod
-    def __reader(file_name: str) -> csv.reader:
-        reader = csv.reader(open(file_name), delimiter=',')
-        reader.__next__()
+    def __reader(self, file_name: str) -> csv.reader:
+        reader = csv.reader(codecs.open(file_name, "r", "utf_8_sig"), delimiter=',')
+        self.headline = reader.__next__()
         return reader
 
-    @staticmethod
-    def __validate(element: List[str]) -> bool:
-        if len(element) == 0:
+    def __validate(self, element: List[str]) -> bool:
+        if len(element) != len(self.headline):
             return False
         for i in range(len(element)):
             if element[i] == '':
@@ -182,12 +83,13 @@ class DataSet:
 
     def __clean_properties(self, vacancies: csv.reader) -> Generator[Vacancy, None, None]:
         i = 0
+        key_skills_index = self.headline.index("key_skills") if "key_skills_index" in self.headline else -1
         for vacancy in vacancies:
             i += 1
             clean_vacancy = []
             if self.__validate(element=vacancy):
                 for merit_index in range(len(vacancy)):
-                    if merit_index == 2:
+                    if merit_index == key_skills_index:
                         temp_property = vacancy[merit_index].split('\n')
                         for i in range(len(temp_property)):
                             temp_property[i] = re.sub(self.__CLEANER, '', temp_property[i])
@@ -196,182 +98,129 @@ class DataSet:
                         temp_property = re.sub(self.__CLEANER, '', vacancy[merit_index])
                         temp_property = re.sub(self.__SPACE_CLEANER, ' ', temp_property).strip()
                     clean_vacancy.append(temp_property)
-                yield Vacancy(clean_vacancy)
+                yield Vacancy(clean_vacancy, self.headline)
         if i == 0:
             raise OutOfDataError
-
-    def get_sorted(self, sort_parameter: Callable, is_revers: bool) -> List[Vacancy] or Generator[Vacancy, None, None]:
-        if sort_parameter == "":
-            return self.vacancies_reader
-        elif self.__sorter.__contains__(sort_parameter):
-            sort_key = self.__sorter[sort_parameter]
-        else:
-            raise SortParameterError
-        return sorted(list(self.vacancies_reader), key=sort_key, reverse=is_revers)
 
 
 class InputConnect:
     def __init__(
             self,
             filename,
-            filter_parameter,
-            sort_parameter,
-            is_revers,
-            print_range,
-            print_columns
-
+            filter_parameter
     ):
-        self.vacancies = DataSet(file_name=filename.strip())
-        self.filter_parameter = self.get_filter(filter_parameter.strip())
-        self.sort_parameter = sort_parameter.strip()
-        self.is_revers = self.get_sort_way(is_revers.strip())
-        self.print_range = print_range.strip().split(" ")
-        self.print_columns = print_columns.strip().split(", ")
-        self.filter_vacancies()
+        self.__vacancies = DataSet(file_name=filename.strip())
+        self.__filter_parameter = filter_parameter.strip()
+        self.all_salary_level = {}
+        self.all_vacancies_count = {}
+        self.salary_level = {}
+        self.vacancies_count = {}
+        self.by_city_level = {}
+        self.vacancies_part = {}
+        self.__get_statistics()
 
-    def __str__(self):
-        my_table = PrettyTable()
-        row_count = 0
-        my_table.field_names = [
-            "№",
-            "Название",
-            "Описание",
-            "Навыки",
-            "Опыт работы",
-            "Премиум-вакансия",
-            "Компания",
-            "Оклад",
-            "Название региона",
-            "Дата публикации вакансии"
-        ]
-        for row in self.vacancies.get_sorted(self.sort_parameter, self.is_revers):
-            row_count += 1
-            my_table.add_row([row_count.__str__()] + row.make_table_row())
-
-        if row_count == 0:
-            raise AssertionError
-
-        self.format_table(my_table)
-
-        if self.print_columns[0] == '':
-            self.print_columns = my_table.field_names
-        else:
-            self.print_columns.insert(0, "№")
-        if self.print_range[0] == '':
-            self.print_range = [1, row_count + 1]
-        elif len(self.print_range) < 2:
-            self.print_range.append(str(row_count + 1))
-
-        return my_table.get_string(
-            fields=self.print_columns,
-            start=int(self.print_range[0]) - 1,
-            end=int(self.print_range[1]) - 1
-        )
-
-    @staticmethod
-    def get_filter(string: str) -> tuple or None:
-        filter_name_to_parse = {
-            "key_skills": lambda to_parse:
-            to_parse.split(", "),
-            "salary": lambda to_parse:
-            int(to_parse),
-            "published_at": lambda to_parse:
-            datetime.strptime(to_parse, "%d.%m.%Y"),
-            "experience_id": lambda to_parse:
-            Translator.inverse_dict(Translator.translation_experience)[to_parse],
-            "premium": lambda to_parse:
-            Translator.inverse_dict(Translator.translation_premium)[to_parse],
-            "salary_currency": lambda to_parse:
-            Translator.inverse_dict(Translator.translation_currency)[to_parse]
-        }
-
-        if string == '':
-            return None
-        if not string.__contains__(':'):
-            raise IOError
-
-        filter_rules = [x.strip() for x in string.split(':')]
-        if not Translator.translation_filter.__contains__(filter_rules[0]):
-            raise KeyError
-        filter_name = Translator.translation_filter[filter_rules[0]]
-        if filter_name_to_parse.__contains__(filter_name):
-            filter_object = filter_name_to_parse[filter_name](filter_rules[1])
-        else:
-            filter_object = filter_rules[1]
-
-        return filter_name, filter_object
-
-    @staticmethod
-    def get_sort_way(to_parse: str) -> bool:
-        if to_parse == "Да":
-            return True
-        elif to_parse == "Нет" or to_parse == "":
-            return False
-        else:
-            raise SortWayError
-
-    def format_table(self, table: PrettyTable) -> None:
-        table.hrules = 1
-        table.max_width = 20
-        table.min_width = 20
-        table._min_width = {"№": 0}
-        table.align = 'l'
-
-    def filter_vacancies(self):
-        filter_checker = {
-            "key_skills": lambda vacancy:
-            all(x in vacancy.key_skills for x in self.filter_parameter[1]),
-            "salary": lambda vacancy:
-            int(vacancy.salary.salary_from) <= self.filter_parameter[1] <= int(vacancy.salary.salary_to),
-            "published_at": lambda vacancy:
-            all([
-                vacancy.published_at.year == self.filter_parameter[1].year,
-                vacancy.published_at.month == self.filter_parameter[1].month,
-                vacancy.published_at.day == self.filter_parameter[1].day
-            ]),
-            "experience_id": lambda vacancy:
-            vacancy.experience_id == self.filter_parameter[1],
-            "premium": lambda vacancy:
-            vacancy.premium == self.filter_parameter[1],
-            "salary_currency": lambda vacancy:
-            vacancy.salary.salary_currency == self.filter_parameter[1],
-            "name": lambda vacancy:
-            vacancy.name == self.filter_parameter[1],
-            "area_name": lambda vacancy:
-            vacancy.area_name == self.filter_parameter[1],
-            "employer_name": lambda vacancy:
-            vacancy.employer_name == self.filter_parameter[1],
-            "description": lambda vacancy:
-            vacancy.description == self.filter_parameter[1]
-        }
-
-        if self.filter_parameter:
-            self.vacancies.vacancies_reader = filter(
-                filter_checker[self.filter_parameter[0]],
-                self.vacancies.vacancies_reader
+    def __get_statistics(self) -> None:
+        temp_by_city_count = {}
+        temp_by_city_level = {}
+        temp_all_by_city_count = {}
+        for vacancy in self.__vacancies.vacancies_reader:
+            vacancy_year = vacancy.published_at.year
+            vacancy_salary = vacancy.salary.get_salary()
+            self.__add_to_or_update(
+                self.all_salary_level,
+                vacancy_year,
+                vacancy_salary
             )
+            self.__add_to_or_update(
+                self.all_vacancies_count,
+                vacancy_year,
+                1
+            )
+            self.__add_to_or_update(
+                temp_by_city_level,
+                vacancy.area_name,
+                vacancy_salary
+            )
+            self.__add_to_or_update(
+                temp_all_by_city_count,
+                vacancy.area_name,
+                1
+            )
+            if self.__filter_parameter in vacancy.name:
+                self.__add_to_or_update(
+                    self.salary_level,
+                    vacancy_year,
+                    vacancy_salary
+                )
+                self.__add_to_or_update(
+                    self.vacancies_count,
+                    vacancy_year,
+                    1
+                )
+                self.__add_to_or_update(
+                    temp_by_city_count,
+                    vacancy.area_name,
+                    1
+                )
+        self.all_salary_level = {key: int(value / self.all_vacancies_count[key]) for key, value in self.all_salary_level.items()}
+        self.salary_level = {key: int(value / self.vacancies_count[key]) for key, value in self.salary_level.items()}
+
+        if len(self.salary_level) == 0:
+            self.salary_level = {key: 0 for key in self.all_vacancies_count.keys()}
+            self.vacancies_count = {key: 0 for key in self.all_vacancies_count.keys()}
+
+        f = sum(temp_all_by_city_count.values())
+        self.vacancies_part = dict(sorted(
+            [(key, float("{:.4f}".format(value / f))) for key, value in temp_all_by_city_count.items() if value / f >= 0.01],
+            key=lambda e: e[1],
+            reverse=True
+        ))
+        self.by_city_level = dict(sorted(
+            [(key, int(temp_by_city_level[key] / temp_all_by_city_count[key])) for key in self.vacancies_part.keys()],
+            key=lambda e: (e[1], -len(e[0])),
+            reverse=True
+        ))
+
+    def print_self(self) -> None:
+        print(f"Динамика уровня зарплат по годам: {self.all_salary_level}")
+        print(f"Динамика количества вакансий по годам: {self.all_vacancies_count}")
+        print(f"Динамика уровня зарплат по годам для выбранной профессии: {self.salary_level}")
+        print(f"Динамика количества вакансий по годам для выбранной профессии: {self.vacancies_count}")
+        print(f"Уровень зарплат по городам (в порядке убывания): {self.__slice_dict(self.by_city_level, 10)}")
+        print(f"Доля вакансий по городам (в порядке убывания): {self.__slice_dict(self.vacancies_part, 10)}")
+
+    @staticmethod
+    def __add_to_or_update(dictionary: Dict[any, any], key: any, value: any) -> None:
+        if dictionary.__contains__(key):
+            dictionary[key] += value
+        else:
+            dictionary.update({key: value})
+
+    @staticmethod
+    def __slice_dict(dictionary: dict, end: int):
+        result = {}
+        i = 0
+        for key, value in dictionary.items():
+            i += 1
+            if i <= end:
+                result.update({key: value})
+            else:
+                break
+        return result
 
 
 try:
     input_connect = InputConnect(
         input("Введите название файла: "),
-        input("Введите параметр фильтрации: "),
-        input("Введите параметр сортировки: "),
-        input("Обратный порядок сортировки (Да / Нет): "),
-        input("Введите диапазон вывода: "),
-        input("Введите требуемые столбцы: ")
+        input("Введите название профессии: ")
     )
-    print(input_connect)
+    input_connect.print_self()
 except StopIteration:
     print("Пустой файл")
 except IOError:
     print("Формат ввода некорректен")
 except KeyError:
     print("Параметр поиска некорректен")
-except SortParameterError:
-    print("Параметр сортировки некорректен")
-except SortWayError:
-    print("Порядок сортировки задан некорректно")
 except AssertionError:
     print("Ничего не найдено")
 except OutOfDataError:
