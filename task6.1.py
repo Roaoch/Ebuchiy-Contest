@@ -3,6 +3,9 @@ import codecs
 import re
 from datetime import datetime
 from typing import List, Generator, Dict
+from openpyxl import Workbook
+from openpyxl.styles import Border, Font, Alignment, Side
+from openpyxl.utils import get_column_letter
 
 
 class OutOfDataError(BaseException):
@@ -176,14 +179,16 @@ class InputConnect:
             key=lambda e: (e[1], -len(e[0])),
             reverse=True
         ))
+        self.by_city_level = self.__slice_dict(self.by_city_level, 10)
+        self.vacancies_part = self.__slice_dict(self.vacancies_part, 10)
 
     def print_self(self) -> None:
         print(f"Динамика уровня зарплат по годам: {self.all_salary_level}")
         print(f"Динамика количества вакансий по годам: {self.all_vacancies_count}")
         print(f"Динамика уровня зарплат по годам для выбранной профессии: {self.salary_level}")
         print(f"Динамика количества вакансий по годам для выбранной профессии: {self.vacancies_count}")
-        print(f"Уровень зарплат по городам (в порядке убывания): {self.__slice_dict(self.by_city_level, 10)}")
-        print(f"Доля вакансий по городам (в порядке убывания): {self.__slice_dict(self.vacancies_part, 10)}")
+        print(f"Уровень зарплат по городам (в порядке убывания): {self.by_city_level}")
+        print(f"Доля вакансий по городам (в порядке убывания): {self.vacancies_part}")
 
     @staticmethod
     def __get_vacancy_part(by_city_count: Dict[str, int]):
@@ -219,19 +224,136 @@ class InputConnect:
         return result
 
 
+class Report:
+    def generate_excel(
+            self,
+            all_salary_level: Dict[str, int],
+            all_vacancies_count: Dict[str, int],
+            salary_level: Dict[str, int],
+            vacancies_count: Dict[str, int],
+            by_city_level: Dict[str, float],
+            vacancies_part: Dict[str, float]
+    ) -> None:
+
+        wb = Workbook()
+        wb.active.title = "Статистика по годам"
+        wb.create_sheet("Статистика по городам", 1)
+        self.__make_year(
+            wb["Статистика по годам"],
+            all_salary_level,
+            all_vacancies_count,
+            salary_level,
+            vacancies_count
+        )
+        self.__make_city(
+            wb["Статистика по городам"],
+            by_city_level,
+            vacancies_part
+        )
+        self.__stylizing(wb)
+
+        wb.save("report.xlsx")
+
+    @staticmethod
+    def __make_year(
+            worksheet,
+            all_salary_level: Dict[str, int],
+            all_vacancies_count: Dict[str, int],
+            salary_level: Dict[str, int],
+            vacancies_count: Dict[str, int]
+    ) -> None:
+        worksheet.append([
+            "Год",
+            "Динамика уровня зарплат по годам",
+            "Динамика количества вакансий по годам",
+            "Динамика уровня зарплат по годам для выбранной профессии",
+            "Динамика количества вакансий по годам для выбранной профессии"
+        ])
+        for key in all_salary_level.keys():
+            worksheet.append([
+                key,
+                all_salary_level[key],
+                all_vacancies_count[key],
+                salary_level[key],
+                vacancies_count[key]
+            ])
+
+    @staticmethod
+    def __make_city(
+            worksheet,
+            by_city_level: Dict[str, float],
+            vacancies_part: Dict[str, float]
+    ) -> None:
+        worksheet.append([
+            "Город",
+            "Уровень зарплат по городам (в порядке убывания)",
+            "",
+            "Город",
+            "Доля вакансий по городам (в порядке убывания)"
+        ])
+        level_keys = list(by_city_level.keys())
+        part_keys = list(vacancies_part.keys())
+        for i in range(len(level_keys)):
+            level_key = level_keys[i]
+            part_key = part_keys[i]
+            worksheet.append([
+                level_key,
+                by_city_level[level_key],
+                "",
+                part_key,
+                vacancies_part[part_key]
+            ])
+
+    @staticmethod
+    def __stylizing(
+            workbook: Workbook
+    ) -> None:
+        bd = Side(style='thin', color="000000")
+        for sheet in workbook:
+            column_widths = []
+            for row_count, row in enumerate(sheet.iter_rows()):
+                for i, cell in enumerate(row):
+                    cell.border = Border(left=bd, top=bd, right=bd, bottom=bd)
+                    if row_count == 0:
+                        cell.font = Font(bold=True)
+                    else:
+                        cell.alignment = Alignment(horizontal="right")
+                    if len(column_widths) > i:
+                        if len(str(cell.value)) > column_widths[i]:
+                            column_widths[i] = len(str(cell.value))
+                    else:
+                        column_widths += [len(str(cell.value))]
+
+            for i, column_width in enumerate(column_widths, 1):
+                sheet.column_dimensions[get_column_letter(i)].width = column_width + 4
+
+        for percent_cell in workbook["Статистика по городам"]["E"]:
+            percent_cell.number_format = "0.00%"
+
+
 try:
     input_connect = InputConnect(
-        input("Введите название файла: "),
-        input("Введите название профессии: ")
+        input("Введите название файла: ") or "vacancies_by_year.csv",
+        input("Введите название профессии: ") or "Аналитик"
+    )
+    report = Report()
+
+    report.generate_excel(
+        input_connect.all_salary_level,
+        input_connect.all_vacancies_count,
+        input_connect.salary_level,
+        input_connect.vacancies_count,
+        input_connect.by_city_level,
+        input_connect.vacancies_part
     )
     input_connect.print_self()
 except StopIteration:
     print("Пустой файл")
-except IOError:
-    print("Формат ввода некорректен")
-except KeyError:
-    print("Параметр поиска некорректен")
-except AssertionError:
-    print("Ничего не найдено")
-except OutOfDataError:
-    print("Нет данных")
+# except IOError:
+#     print("Формат ввода некорректен")
+# except KeyError:
+#     print("Параметр поиска некорректен")
+# except AssertionError:
+#     print("Ничего не найдено")
+# except OutOfDataError:
+#     print("Нет данных")
