@@ -349,11 +349,11 @@ try:
     input_connect.print_self()
 except StopIteration:
     print("Пустой файл")
-# except IOError:
-#     print("Формат ввода некорректен")
-# except KeyError:
-#     print("Параметр поиска некорректен")
-# except AssertionError:
-#     print("Ничего не найдено")
-# except OutOfDataError:
-#     print("Нет данных")
+except IOError:
+    print("Формат ввода некорректен")
+except KeyError:
+    print("Параметр поиска некорректен")
+except AssertionError:
+    print("Ничего не найдено")
+except OutOfDataError:
+    print("Нет данных")
