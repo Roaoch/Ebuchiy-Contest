@@ -332,7 +332,8 @@ class Report:
             salary_city,
             part_city
         )
-        plt.show()
+        fig.tight_layout()
+        plt.savefig('graph.png', dpi=300)
 
     @staticmethod
     def __format_histograms(
